@@ -1,0 +1,8 @@
+MemoryModule is a C-library that can be used to load a DLL from memory.
+
+https://github.com/fancycode/MemoryModule
+https://www.joachim-bauch.de/tutorials/loading-a-dll-from-memory/
+
+
+
+http://www.exploit-monday.com/2011/11/powersyringe-powershell-based-codedll.html
