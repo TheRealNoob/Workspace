@@ -38,6 +38,15 @@
         https://gallery.technet.microsoft.com/scriptcenter/PowerShell-System-571521d1
     #>
 
+    <#
+        Todo:
+        Run against remote PC
+        Run against multiple PCs
+        Migration from WMI to CIMv2
+            Single remote CIM session
+        Option to display output as flat object
+    #>
+
     Param(
         [Parameter(Mandatory=$false,
         ValueFromPipeline=$true)]
@@ -51,12 +60,18 @@
         Hardware = [PSCustomObject]@{
             Model = [PSCustomObject]@{}
             RAM  = [PSCustomObject]@{}
-            CPU  = [PSCustomObject]@{}
+            CPU  = [Array]@()
+                # [0] [PSCustomObject]@{}
+                # ...
+                # [1] [PSCustomObject]@{}
         }
         Disks   = [pscustomobject]@{
-            Local     = [PSCustomObject]@{}
-            Removable = [PSCustomObject]@{}
-            Network   = [PSCustomObject]@{}
+            Local     = [Array]@()
+                # [0] [PSCustomObject]@{}
+                # ...
+                # [99] [PSCustomObject]@{}
+            Removable = [Array]@()
+            Network   = [Array]@()
         }
         OS = [PSCustomObject]@{
             System = [PSCustomObject]@{}
@@ -73,12 +88,10 @@
     #
     # ******************************
     ## Model & BIOS
-    $system.Hardware.Model = Get-WmiObject -Computer $ComputerName -Class Win32_ComputerSystem -ErrorAction SilentlyContinue | Foreach {
-       [PSCustomObject]@{
-            HardwareManufacturer = $_.Manufacturer
-            HardwareModel = $_.Model
-        }
-    }
+    $wmi = [array]@(Get-WmiObject -Computer $ComputerName -Class Win32_ComputerSystem -ErrorAction SilentlyContinue)
+    $system.Hardware.Model | Add-Member -MemberType NoteProperty -Name HardwareManufacturer -Value $wmi.Manufacturer
+    $system.Hardware.Model | Add-Member -MemberType NoteProperty -Name HardwareModel -Value $wmi.Model
+    $wmi = $null
 
     $wmi = [array]@(Get-WmiObject -Computer $ComputerName -Class Win32_BIOS -ErrorAction SilentlyContinue)
     $system.Hardware.Model | Add-Member -MemberType NoteProperty -Name BIOSManufacturer -Value $wmi.Manufacturer
@@ -97,34 +110,20 @@
     $system.Hardware.RAM | Add-Member -MemberType NoteProperty -Name Free -Value $wmi.FreePhysicalMemory
     $wmi = $null
 
-
     ## CPU
-    $wmi = Get-WmiObject -Computer $ComputerName -Class Win32_Processor -ErrorAction SilentlyContinue
-    If ($wmi.GetType().Name -eq "ManagementObject") {
-        #one socket
-        $system.Hardware.CPU | Add-Member -MemberType NoteProperty -Name "Socket1" -Force -Value ([PSCustomObject]@{
-            Manufacturer = $wmi.Manufacturer
-            Name = $wmi.Name
-            Description = $wmi.Description
-            Socket = $wmi.SocketDesignation
-            Cores = $wmi.NumberOfCores
-            LogicalProcessors = $wmi.NumberOfLogicalProcessors
-            ClockSpeed = $wmi.MaxClockSpeed
-        })
-    } else {
-        #more than one socket
-        For ($i = 0; $i -le $($wmi.Count); $i++) {
-            $system.Hardware.CPU | Add-Member -MemberType NoteProperty -Name "Socket$($i + 1)" -Value ([PSCustomObject]@{
-                Manufacturer = $wmi.Manufacturer
-                Name = $wmi.Name
-                Description = $wmi.Description
-                Socket = $wmi.SocketDesignation
-                Cores = $wmi.NumberOfCores
-                LogicalProcessors = $wmi.NumberOfLogicalProcessors
-                ClockSpeed = $wmi.MaxClockSpeed
-            })
+    $system.Hardware.CPU = [Array]@(
+        Get-WmiObject -Computer $ComputerName -Class Win32_Processor -ErrorAction SilentlyContinue | Foreach {
+            [PSCustomObject]@{
+                Socket = $_.SocketDesignation
+                Manufacturer = $_.Manufacturer
+                Name = $_.Name
+                Description = $_.Description
+                Cores = $_.NumberOfCores
+                LogicalProcessors = $_.NumberOfLogicalProcessors
+                ClockSpeed = $_.MaxClockSpeed
+            }
         }
-    }
+    )
 
     # ******************************
     #
@@ -132,50 +131,56 @@
     #
     # ******************************
     ## Local disks
-    $system.Disks.local = Get-WmiObject -Computer $ComputerName -Class Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction SilentlyContinue | Foreach {
-       [PSCustomObject]@{
-            DriveLetter = $_.DeviceID
-            VolumeName = $_.VolumeName
-            FileSystem = $_.FileSystem
-            Total = $_.Size
-            TotalGB = [Math]::Round($_.Size / 1GB, 2)
-            Used = ($_.Size - $_.FreeSpace)
-            UsedGB = [Math]::Round(($_.Size - $_.FreeSpace) / 1GB, 2)
-            Free = $_.FreeSpace
-            FreeGB = [Math]::Round($_.FreeSpace / 1GB, 2)
+    $system.Disks.local = [Array]@(
+        Get-WmiObject -Computer $ComputerName -Class Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction SilentlyContinue | Foreach {
+           [PSCustomObject]@{
+                DriveLetter = $_.DeviceID
+                VolumeName = $_.VolumeName
+                FileSystem = $_.FileSystem
+                Total = $_.Size
+                TotalGB = [Math]::Round($_.Size / 1GB, 2)
+                Used = ($_.Size - $_.FreeSpace)
+                UsedGB = [Math]::Round(($_.Size - $_.FreeSpace) / 1GB, 2)
+                Free = $_.FreeSpace
+                FreeGB = [Math]::Round($_.FreeSpace / 1GB, 2)
+            }
         }
-    }
+    )
 
     ## Removable disks
-    $system.Disks.Removable = Get-WmiObject -Computer $ComputerName -Class Win32_LogicalDisk -Filter 'DriveType=2' -ErrorAction SilentlyContinue | Foreach {
-        [PSCustomObject]@{
-            DriveLetter = $_.DeviceID
-            VolumeName = $_.VolumeName
-            FileSystem = $_.FileSystem
-            Total = $_.Size
-            TotalGB = [Math]::Round($_.Size / 1GB, 2)
-            Used = ($_.Size - $_.FreeSpace)
-            UsedGB = [Math]::Round(($_.Size - $_.FreeSpace) / 1GB, 2)
-            Free = $_.FreeSpace
-            FreeGB = [Math]::Round($_.FreeSpace / 1GB, 2)
+    $system.Disks.Removable = [Array]@(
+        Get-WmiObject -Computer $ComputerName -Class Win32_LogicalDisk -Filter 'DriveType=2' -ErrorAction SilentlyContinue | Foreach {
+            [PSCustomObject]@{
+                DriveLetter = $_.DeviceID
+                VolumeName = $_.VolumeName
+                FileSystem = $_.FileSystem
+                Total = $_.Size
+                TotalGB = [Math]::Round($_.Size / 1GB, 2)
+                Used = ($_.Size - $_.FreeSpace)
+                UsedGB = [Math]::Round(($_.Size - $_.FreeSpace) / 1GB, 2)
+                Free = $_.FreeSpace
+                FreeGB = [Math]::Round($_.FreeSpace / 1GB, 2)
+            }
         }
-    }
+    )
 
     ## Network disks
-    $system.Disks.Network = Get-WmiObject -Computer $ComputerName -Class Win32_LogicalDisk -Filter 'DriveType=4' -ErrorAction SilentlyContinue | Foreach {
-        [PSCustomObject]@{
-            DriveLetter = $_.DeviceID
-            VolumeName = $_.VolumeName
-            UNCPath = $_.ProviderName
-            FileSystem = $_.FileSystem
-            Total = $_.Size
-            TotalGB = [Math]::Round($_.Size / 1GB, 2)
-            Used = ($_.Size - $_.FreeSpace)
-            UsedGB = [Math]::Round(($_.Size - $_.FreeSpace) / 1GB, 2)
-            Free = $_.FreeSpace
-            FreeGB = [Math]::Round($_.FreeSpace / 1GB, 2)
+    $system.Disks.Network = [Array]@(
+        Get-WmiObject -Computer $ComputerName -Class Win32_LogicalDisk -Filter 'DriveType=4' -ErrorAction SilentlyContinue | Foreach {
+            [PSCustomObject]@{
+                DriveLetter = $_.DeviceID
+                VolumeName = $_.VolumeName
+                UNCPath = $_.ProviderName
+                FileSystem = $_.FileSystem
+                Total = $_.Size
+                TotalGB = [Math]::Round($_.Size / 1GB, 2)
+                Used = ($_.Size - $_.FreeSpace)
+                UsedGB = [Math]::Round(($_.Size - $_.FreeSpace) / 1GB, 2)
+                Free = $_.FreeSpace
+                FreeGB = [Math]::Round($_.FreeSpace / 1GB, 2)
+            }
         }
-    }
+    )
 
     # ******************************
     #
@@ -213,13 +218,15 @@
 
     ## UAC level
     $wmi = (Get-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System).ConsentPromptBehaviorAdmin
-    If ($wmi -eq "0") {$system.OS.System | Add-Member -MemberType NoteProperty -Name UACLevel -Value "Prompt Admin Continue"}
-    If ($wmi -eq "1") {$system.OS.System | Add-Member -MemberType NoteProperty -Name UACLevel -Value "Prompt Admin Password"}
-    If ($wmi -eq "2") {$system.OS.System | Add-Member -MemberType NoteProperty -Name UACLevel -Value "No Admin Prompt"}
+    Switch ($wmi) {
+        0 {$system.OS.System | Add-Member -MemberType NoteProperty -Name UACLevel -Value "Prompt Admin Continue"}
+        1 {$system.OS.System | Add-Member -MemberType NoteProperty -Name UACLevel -Value "Prompt Admin Password"}
+        2 {$system.OS.System | Add-Member -MemberType NoteProperty -Name UACLevel -Value "No Admin Prompt"}
+    }
     $wmi = $null
 
     ## Windows Updates
-    $system.OS.WindowsUpdates = [array]@(Get-WmiObject -Class "win32_quickfixengineering")
+    $system.OS.WindowsUpdates = [array]@(Get-WmiObject -Class Win32_QuickFixEngineering)
 
     ## Installed Programs
     $system.OS.Programs = [array]@(Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object Publisher, DisplayName, DisplayVersion, InstallDate)
@@ -242,5 +249,4 @@
     }
 
     Write-Output $system
-
 }
