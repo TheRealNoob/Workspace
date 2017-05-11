@@ -1,0 +1,11 @@
+Add-Type -AssemblyName System.Security
+
+# reads password_value (blob) from db, saves (i think) first result to file.  Writes to host the length of each blob (that is the number of characters).
+.\sqlite3.exe "C:\Users\Mike\Desktop\sqlite-tools-win32-x86-3180000\Login Data" "SELECT writefile('file.txt', password_value) FROM logins;"
+
+$var1 = get-content -path "C:\Users\Mike\Desktop\sqlite-tools-win32-x86-3180000\file.txt" -encoding Byte
+$var2 = [Security.Cryptography.ProtectedData]::Unprotect($var1,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser)
+$var3 = [Text.Encoding]::Default.GetString($var2)
+
+$var3
+[decrypted password]
