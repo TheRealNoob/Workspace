@@ -81,25 +81,40 @@
         NetworkAdapter = [PSCustomObject]@{}
     }
 
+    $ComputerSystem = Get-CimInstance -ComputerName $ComputerName -ClassName Win32_ComputerSystem | Select *
+    $BIOS = Get-CimInstance -ComputerName $ComputerName -ClassName Win32_BIOS | Select *
+    $OperatingSystem = Get-CimInstance -ComputerName $ComputerName -ClassName Win32_OperatingSystem | Select *
+    $Disks = Get-CimInstance -ComputerName $ComputerName -ClassName Win32_LogicalDisk | Select *
+    $Processor = Get-CimInstance -ComputerName $ComputerName -ClassName Win32_Processor | Select *
+    $Updates = Get-CimInstance -ComputerName $ComputerName -ClassName Win32_QuickFixEngineering | Select *
 
+
+    $SystemInfo = @{
+
+        Manufacturer = $ComputerSystem.Manufacturer
+        Model = $ComputerSystem.Model
+        BIOSManufacturer = $BIOS.Manufacturer
+        BIOSName = $BIOS.Name
+        BIOSVersion = $BIOS.Version
+        InstalledRAM = [Math]::Round(($OperatingSystem.TotalVisibleMemorySize / 1GB),2)
+        UsedRAM = [Math]::Round(($OperatingSystem.TotalVisibleMemorySize  - $OperatingSystem.FreePhysicalMemory) / 1MB,2)
+        FreeRAM = [math]::Round($OperatingSystem.FreePhysicalMemory / 1MB ,2)
+        CPUSocket = $Processor.SocketDesignation
+        CPUManufacturer = $Processor.Manufacturer
+        CPUName = $Processor.Name
+        CPUDescription = $Processor.Description
+        CPUCores = $Processor.NumberOfCores
+        CPULogicalProcessors = $Processor.NumberOfLogicalProcessors
+        CPUClockSpeed = $Processor.MaxClockSpeed
+    }
     # ******************************
     #
     # Hardware
     #
     # ******************************
-    ## Model & BIOS
-    $wmi = [array]@(Get-WmiObject -Computer $ComputerName -Class Win32_ComputerSystem -ErrorAction SilentlyContinue)
-    $system.Hardware.Model | Add-Member -MemberType NoteProperty -Name HardwareManufacturer -Value $wmi.Manufacturer
-    $system.Hardware.Model | Add-Member -MemberType NoteProperty -Name HardwareModel -Value $wmi.Model
-    $wmi = $null
+    
 
-    $wmi = [array]@(Get-WmiObject -Computer $ComputerName -Class Win32_BIOS -ErrorAction SilentlyContinue)
-    $system.Hardware.Model | Add-Member -MemberType NoteProperty -Name BIOSManufacturer -Value $wmi.Manufacturer
-    $system.Hardware.Model | Add-Member -MemberType NoteProperty -Name BIOSName -Value $wmi.Name
-    $system.Hardware.Model | Add-Member -MemberType NoteProperty -Name BIOSVersion -Value $wmi.Version
-    $wmi = $null
-
-    ## RAM
+    #region RAM
     $wmi = [array]@(Get-WmiObject -Computer $ComputerName -Class Win32_ComputerSystem -ErrorAction SilentlyContinue)
     $system.Hardware.RAM | Add-Member -MemberType NoteProperty -Name Physical -Value $wmi.TotalPhysicalMemory
     $wmi = $null
@@ -109,8 +124,9 @@
     $system.Hardware.RAM | Add-Member -MemberType NoteProperty -Name Used -Value ($wmi.TotalVisibleMemorySize - $wmi.FreePhysicalMemory)
     $system.Hardware.RAM | Add-Member -MemberType NoteProperty -Name Free -Value $wmi.FreePhysicalMemory
     $wmi = $null
+    #endregion
 
-    ## CPU
+   #region CPU
     $system.Hardware.CPU = [Array]@(
         Get-WmiObject -Computer $ComputerName -Class Win32_Processor -ErrorAction SilentlyContinue | Foreach {
             [PSCustomObject]@{
@@ -124,7 +140,7 @@
             }
         }
     )
-
+    #endregion
     # ******************************
     #
     # Disks
